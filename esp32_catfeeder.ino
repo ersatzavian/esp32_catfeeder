@@ -14,6 +14,7 @@ void printLocalTime();
 void setTime(int, int, int, int, int, int, int);
 void feedBuster(int);
 void onBreakfastTimer();
+void onBlinkTimer();
 void setBreakfastTimer();
 void connectToWiFi(const char * , const char * );
 void printLine();
@@ -27,13 +28,15 @@ const char * networkPswd = "fivewordslowercasenospaces";
 const char * tzString = "PST8PDT,M3.2.0,M11.1.0";
 
 // Number of limit switch clicks per feeding
-const int MEALSIZE_CLICKS_DEFAULT = 5;
-const int MEALSIZE_CLICKS_MAX = 15;
+const int MEALSIZE_CLICKS_DEFAULT = 8;
+const int MEALSIZE_CLICKS_MAX = 20;
 // Default feeding at 05:00 local
 const int FEEDTIME_HOUR_DEFAULT = 5;
 const int FEEDTIME_MIN_DEFAULT = 0;
 int FEEDTIME_HOUR = FEEDTIME_HOUR_DEFAULT;
 int FEEDTIME_MIN = FEEDTIME_MIN_DEFAULT;
+
+bool led_state;
 
 // Pin assignments
 const int BUTTON_PIN = 0;
@@ -46,10 +49,12 @@ AsyncWebServer server(80);
 const char* PARAM_MESSAGE = "message";
 
 int seconds_til_breakfast = 100;
-// execute once, in seconds_til_breakfast * 1000 milliseconds
-TickTwo breakfast_timer(onBreakfastTimer, seconds_til_breakfast * 1000, 1);
+// execute once, in seconds_til_breakfast * 1000 milliseconds, use millisecond internal timer 
+// timers default to microsecond internal resolution, which limits remaining time to 70 min
+TickTwo breakfast_timer(onBreakfastTimer, seconds_til_breakfast * 1000, 1, MILLIS);
 // used to wait one minute before scheduling next breakfast, when breakfast happens.
-TickTwo nextbreakfast_timer(setBreakfastTimer, 60 * 1000, 1);
+TickTwo nextbreakfast_timer(setBreakfastTimer, 60 * 1000, 1, MILLIS);
+TickTwo blink_timer(onBlinkTimer, 1000, 0, MILLIS);
 
 void setTimezone(String timezone){
   Serial.printf("  Setting Timezone to %s\n",timezone.c_str());
@@ -126,6 +131,12 @@ void onBreakfastTimer() {
   nextbreakfast_timer.start();
 }
 
+void onBlinkTimer() {
+  digitalWrite(LED_PIN, led_state);
+  led_state = !led_state;
+  Serial.println(breakfast_timer.remaining() / 1000);
+}
+
 // https://github.com/sstaub/Ticker 
 void setBreakfastTimer() {
   struct tm timeinfo;
@@ -172,6 +183,7 @@ void connectToWiFi(const char * ssid, const char * pwd) {
   }
 
   Serial.println();
+  digitalWrite(LED_PIN, LOW);
   Serial.println("WiFi connected!");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
@@ -298,9 +310,11 @@ void setup() {
   setBreakfastTimer();
 
   Serial.println("Press button 0 to feed the cat");
+  blink_timer.start();
 }
 
 void loop() {
+  blink_timer.update();
   breakfast_timer.update();
   nextbreakfast_timer.update();
   if (digitalRead(BUTTON_PIN) == LOW)
