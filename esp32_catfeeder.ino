@@ -28,13 +28,14 @@ const char * networkPswd = "fivewordslowercasenospaces";
 const char * tzString = "PST8PDT,M3.2.0,M11.1.0";
 
 // Number of limit switch clicks per feeding
-const int MEALSIZE_CLICKS_DEFAULT = 8;
+const int MEALSIZE_CLICKS_DEFAULT = 5;
 const int MEALSIZE_CLICKS_MAX = 20;
 // Default feeding at 05:00 local
 const int FEEDTIME_HOUR_DEFAULT = 5;
 const int FEEDTIME_MIN_DEFAULT = 0;
 int FEEDTIME_HOUR = FEEDTIME_HOUR_DEFAULT;
 int FEEDTIME_MIN = FEEDTIME_MIN_DEFAULT;
+int MEALSIZE_CLICKS = MEALSIZE_CLICKS_DEFAULT;
 
 bool led_state;
 
@@ -125,7 +126,7 @@ void feedBuster(int mealsize_clicks=MEALSIZE_CLICKS_DEFAULT) {
 
 void onBreakfastTimer() {
   breakfast_timer.stop();
-  feedBuster();
+  feedBuster(MEALSIZE_CLICKS);
 
   // wait 1m before scheduling next breakfast
   nextbreakfast_timer.start();
