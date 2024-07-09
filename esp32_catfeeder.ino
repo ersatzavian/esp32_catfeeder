@@ -30,12 +30,23 @@ const char * tzString = "PST8PDT,M3.2.0,M11.1.0";
 // Number of limit switch clicks per feeding
 const int MEALSIZE_CLICKS_DEFAULT = 5;
 const int MEALSIZE_CLICKS_MAX = 20;
-// Default feeding at 05:00 local
-const int FEEDTIME_HOUR_DEFAULT = 5;
-const int FEEDTIME_MIN_DEFAULT = 0;
-int FEEDTIME_HOUR = FEEDTIME_HOUR_DEFAULT;
-int FEEDTIME_MIN = FEEDTIME_MIN_DEFAULT;
-int MEALSIZE_CLICKS = MEALSIZE_CLICKS_DEFAULT;
+
+typedef struct {
+  int hr; 
+  int min; 
+  int clicks;
+} meal;
+
+// Default feedings at 03:00 (3 clicks) and 05:00 (2 clicks) local
+// set hr > 23 to mark an unscheduled slot.
+const int NUM_SCHEDULE_SLOTS = 4;
+meal schedule[NUM_SCHEDULE_SLOTS] = {
+  {3, 0, 3},
+  {5, 0, 2},
+  {24, 0, 0},
+  {24, 0, 0}
+};
+int meal_idx = 0;
 
 bool led_state;
 
@@ -49,6 +60,7 @@ const int MOTOR_PIN = 13;
 AsyncWebServer server(80);
 const char* PARAM_MESSAGE = "message";
 
+int next_mealsize_clicks = 0;
 int seconds_til_breakfast = 100;
 // execute once, in seconds_til_breakfast * 1000 milliseconds, use millisecond internal timer 
 // timers default to microsecond internal resolution, which limits remaining time to 70 min
@@ -126,7 +138,7 @@ void feedBuster(int mealsize_clicks=MEALSIZE_CLICKS_DEFAULT) {
 
 void onBreakfastTimer() {
   breakfast_timer.stop();
-  feedBuster(MEALSIZE_CLICKS);
+  feedBuster(next_mealsize_clicks);
 
   // wait 1m before scheduling next breakfast
   nextbreakfast_timer.start();
@@ -135,7 +147,14 @@ void onBreakfastTimer() {
 void onBlinkTimer() {
   digitalWrite(LED_PIN, led_state);
   led_state = !led_state;
-  Serial.println(breakfast_timer.remaining() / 1000);
+  if (breakfast_timer.state() == RUNNING) {
+    Serial.print("Breakfast in ");
+    Serial.println(breakfast_timer.remaining() / 1000);
+  } else {
+    Serial.print("Scheduling in ");
+    Serial.println(nextbreakfast_timer.remaining() / 1000);
+  }
+   
 }
 
 // https://github.com/sstaub/Ticker 
@@ -150,7 +169,8 @@ void setBreakfastTimer() {
   }
 
   // calculate seconds till feeding
-  seconds_til_breakfast = (FEEDTIME_HOUR * 3600 + FEEDTIME_MIN * 60) - (timeinfo.tm_hour * 3600 + timeinfo.tm_min * 60 + timeinfo.tm_sec);
+  seconds_til_breakfast = (schedule[meal_idx].hr * 3600 + schedule[meal_idx].min * 60) - (timeinfo.tm_hour * 3600 + timeinfo.tm_min * 60 + timeinfo.tm_sec);
+  next_mealsize_clicks = schedule[meal_idx].clicks;
   if (seconds_til_breakfast < 0) {
     seconds_til_breakfast += 86400;
   }
@@ -158,6 +178,15 @@ void setBreakfastTimer() {
   Serial.printf("%d seconds til breakfast.\n", seconds_til_breakfast);
   breakfast_timer.interval(seconds_til_breakfast * 1000);
   breakfast_timer.start();  
+
+  // advance the mealidx to the next valid meal so we're ready to schedule that one
+  do {
+    meal_idx++;
+    if (meal_idx >= NUM_SCHEDULE_SLOTS) {
+      meal_idx = 0;
+    }
+  } while(schedule[meal_idx].hr > 23); 
+  Serial.printf("The following feeding will be %d clicks at %02d:%02d.\n", schedule[meal_idx].clicks, schedule[meal_idx].hr, schedule[meal_idx].min);
 
 }
 
@@ -217,14 +246,22 @@ void connectToWiFi(const char * ssid, const char * pwd) {
   server.on("/schedule", HTTP_GET, [](AsyncWebServerRequest *request){
     int hour = 0;
     int min = 0;
+    int idx = 0;
+    int clicks = 0;
     
+    if (request->hasArg("idx")) {
+      idx = request->arg("idx").toInt();
+      if (idx >= NUM_SCHEDULE_SLOTS) {
+        request->send(400, "text/plain", "Invalid index: " + request->arg("idx") + ", Valid is 0-" + NUM_SCHEDULE_SLOTS);
+      }
+    }
     if (request->hasArg("hr")) {
       hour = request->arg("hr").toInt();
       if (hour > 23) {
         request->send(400, "text/plain", "Tried to set feeding hour to " + request->arg("hr"));
         return;
       } else {
-        FEEDTIME_HOUR = hour;
+        schedule[idx].hr = hour;
       }
     }
     
@@ -234,12 +271,25 @@ void connectToWiFi(const char * ssid, const char * pwd) {
         request->send(400, "text/plain", "Tried to set feeding min to " + request->arg("min"));
         return;
       } else {
-        FEEDTIME_MIN = min;
+        schedule[idx].min = min;
       }
     }
 
-    request->send(200, "text/plain", "Set Breakfast Time to "+String(FEEDTIME_HOUR)+":"+String(FEEDTIME_MIN));
+    if (request->hasArg("clicks")) {
+      clicks = request->arg("clicks").toInt();
+      if (clicks > MEALSIZE_CLICKS_MAX) {
+        // TODO print allowed values
+        request->send(400, "text/plain", "Tried to set number of clicks to " + request->arg("clicks") + ", Max is " + String(MEALSIZE_CLICKS_MAX));
+        return;
+      } else {
+        schedule[idx].clicks = clicks;
+      }
+    }
+
+    request->send(200, "text/plain", "Set Breakfast Time "+String(idx)+" to "+String(hour)+":"+String(min)+", "+String(clicks)+" clicks.");
     setBreakfastTimer();
+
+    // TODO probably need to sort the feeding times in the array so they don't come out all screwed up
 
   });
 
