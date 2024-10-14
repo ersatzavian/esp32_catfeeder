@@ -1,6 +1,8 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 //https://techtutorialsx.com/2017/12/01/esp32-arduino-asynchronous-http-webserver/
+// ESP Async WebServer 3.3.14 Me-No-Dev
+// Requires AsyncTCP 3.2.10 Me-No-Dev
 #include <ESPAsyncWebServer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -37,12 +39,15 @@ typedef struct {
   int clicks;
 } meal;
 
+// {hr, min, clicks}
+// Hills prescription diet is about 6.6 grams per "click"
+// Buster gets about 50 grams (8 clicks because I'm nice)
 // Default feedings at 03:00 (3 clicks) and 05:00 (2 clicks) local
 // set hr > 23 to mark an unscheduled slot.
 const int NUM_SCHEDULE_SLOTS = 4;
 meal schedule[NUM_SCHEDULE_SLOTS] = {
   {3, 0, 3},
-  {5, 0, 2},
+  {5, 0, 5},
   {24, 0, 0},
   {24, 0, 0}
 };
@@ -169,6 +174,7 @@ void setBreakfastTimer() {
   }
 
   // calculate seconds till feeding
+  // BUG: Just starts with the first feeding in the list; should find the _soonest_ instead.
   seconds_til_breakfast = (schedule[meal_idx].hr * 3600 + schedule[meal_idx].min * 60) - (timeinfo.tm_hour * 3600 + timeinfo.tm_min * 60 + timeinfo.tm_sec);
   next_mealsize_clicks = schedule[meal_idx].clicks;
   if (seconds_til_breakfast < 0) {

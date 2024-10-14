@@ -27,3 +27,8 @@ Takes query parameters:
 ```bash
 catfeeder0.local/schedule?index=0&hr=6&min=0&clicks=3
 ```
+
+## Issues
+
+- When first setting up schedule, setBreakfastTimer assumes the first feeding in the list is the soonest feeding, when it may not be. 
+- Consider adding a keypad / display for reprogramming on the fly. This would require flash memory, maybe the ESP32 has some? See [this instructable](https://www.instructables.com/Time-Controlled-Relay-Arduino-UNO-Joystick-UImenu-/)
